@@ -1,0 +1,16 @@
+idf_component_register(
+    SRCS
+        "Source/HTTP.c"
+        "Source/WIFI.c"
+        "Source/ESP_BOOTLOADER.c"
+    INCLUDE_DIRS 
+        "Include"
+    REQUIRES 
+        esp_wifi 
+        esp_event 
+        esp_netif 
+        nvs_flash 
+        esp_http_client 
+        driver 
+        freertos
+)
