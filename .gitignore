@@ -21,3 +21,6 @@ managed_components/
 .project
 .cproject
 *.launch
+
+#Personal Script
+push_all.sh
