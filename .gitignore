@@ -1,0 +1,23 @@
+#STM32 Rules
+**/Debug/
+**/Release/
+*.elf
+*.list
+*.map
+*.o
+*.d
+*.su
+!/*.bin
+
+#ESP32 Rules
+**/build/
+sdkconfig
+sdkconfig.old
+managed_components/
+
+#System & IDE
+.vscode/
+.settings/
+.project
+.cproject
+*.launch
