@@ -78,7 +78,6 @@ stateDiagram-v2
 Before accepting commands, the STM32 bootloader strictly validates a two-step handshake sequence inside its main execution loop.
 
 ### 5.2 Bootloader Packet Execution Flow
-
 Once verified, the STM32 operates based on commands embedded in the validated data frames:
 
 * **`BL_START`**: Sets internal flash write pointer (`FLASH_Page_Pointer`) to `APP_ADD_BASE`. Returns `BL_ACK`.
@@ -86,18 +85,35 @@ Once verified, the STM32 operates based on commands embedded in the validated da
 * **`BL_PROGRAM`**: Assembles 8-bit streams into 16-bit half-words and writes sequentially to internal Flash. Returns `BL_ACK`.
 * **`BL_JUMP`**: Disables global interrupts, clears the SysTick timer, re-maps the Vector Table Base Register (`SCB_VTOR`), resets the Main Stack Pointer (`_Set_MSP`), and triggers the Reset Handler function pointer of the user application.
 
+---
+
 ## 6. Flash Memory Mapping (STM32F103C8T6)
 
 The internal 64KB Flash memory configuration is mapped out as follows:
 
-## 7. Build and Flash Instructions
+```text
+┌──────────────────────────┐ 0x0800 0000
+│  STM32 Bootloader Code   │ (Allocated Bootloader Space)
+├──────────────────────────┤ 0x0800 XXXXX <-- APP_ADD_BASE
+│  Vector Table (App)      │
+├──────────────────────────┤
+│                          │
+│   User Application Space │ (Up to 25 Pages Erased via BL_ERASE)
+│                          │
+└──────────────────────────┘ 0x0801 0000 (End of 64KB Flash)
+```
+## 7. Critical Robustness & Safety Trade-offs
 
-### Prerequisites
-* **ESP32:** ESP-IDF framework (v5.x recommended) or VS Code ESP-IDF extension.
-* **STM32:** `arm-none-eabi-gcc` toolchain and an ST-Link V2 programmer.
+* **Baud Rate Selection:** Clocked at `9600 bps` to guarantee noise-immune, error-free data transfer over unshielded wires without hardware flow control.
+* **Local RAM Buffering:** Uses an incremental 128-byte stream ring in RAM to eliminate the need for large, continuous external storage (SD Cards/SPI Flash).
+* **Safe Pointer Recovery:** Triggers an immediate abort upon receiving a `BL_NACK` (due to network drops or CRC mismatch) to prevent device bricking.
 
-### Step 1: Flash the STM32 Bootloader
-Navigate into your STM32 workspace directory and build/flash the code:
-```bash
-make clean && make
-st-flash write build/stm32_bootloader.bin 0x08000000
+## 8. Planned Enhancements
+
+* **Dual-Bank Storage:** Transitioning to a dual-bank flashing topology to support safe firmware rollbacks.
+* **Hardware Reset Wire:** Routing an ESP32 GPIO to the STM32 `NRST` line to automate cold-boot entries into the bootloader.
+* **Encrypted Binaries:** Implementing on-the-fly AES-256 decryption inside the ESP32 to prevent firmware sniffing attacks.
+
+## 9. Author
+
+* **Author:** Vo Phuc Thinh
