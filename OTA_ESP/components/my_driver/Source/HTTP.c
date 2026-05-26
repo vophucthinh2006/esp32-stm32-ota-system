@@ -28,10 +28,10 @@ static esp_err_t _http_event_handler(esp_http_client_event_t *evt) {
             break;
 
         case HTTP_EVENT_ON_HEADER:
-            // Nếu server gửi Header ETag, lưu nó vào buffer trong user_data
+            // Save Header ETag into user_data
             if (user_data && user_data->etag_buffer && strcasecmp(evt->header_key, "ETag") == 0) {
                 strncpy(user_data->etag_buffer, evt->header_value, 63);
-                user_data->etag_buffer[63] = '\0'; // Đảm bảo kết thúc chuỗi
+                user_data->etag_buffer[63] = '\0';
                 ESP_LOGD(TAG, "[Header] %s: %s", evt->header_key, evt->header_value);
             }
             break;
