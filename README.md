@@ -69,7 +69,7 @@ The custom carrier board schematic integrates power regulation, status LEDs, deb
 Single-sided PCB design incorporating power planes, signal routing, and modular sub-board connections.
 
 <p align="center">
-  <img src="docs/images/OTA_PCB_Layout.svg" alt="PCB Layout" width="700">
+  <img src="docs/OTA_PCB_Layout.svg" alt="PCB Layout" width="700">
 </p>
 
 ---
