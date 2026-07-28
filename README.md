@@ -131,7 +131,8 @@ The internal 64KB Flash memory space is divided to segregate the immutable bootl
 
 ## 8. Demo Video
 Below is a short demo video illustrating the end-to-end OTA update process:
-▶️ [ESP32 to STM32 Dual-MCU OTA Update - Demo Video]([https://youtu.be/YOUR_VIDEO_ID](https://www.youtube.com/watch?v=XsSUUxfZz8Y))
+
+▶️ [ESP32 to STM32 Dual-MCU OTA Update - Demo Video](https://youtu.be/XsSUUxfZz8Y?si=K6gj_BpSvMdLIf3Q)
 
 ---
 
