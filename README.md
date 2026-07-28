@@ -1,119 +1,160 @@
 # ESP32 to STM32 Dual-MCU OTA Update System
 
-A robust, bare-metal dual-MCU Firmware Update Over-The-Air (OTA) system. This project utilizes an ESP32 as a network-connected gateway that fetches firmware binaries from a GitHub repository via HTTPS and flashes them onto an STM32F103C8T6 host microcontroller via a custom UART bootloader protocol.
-
-## 1. Project Overview
-
-This system provides a reliable, remote firmware deployment pipeline for distributed edge devices. The architecture separates the network gateway layer from the core application execution layer:
-
-* **ESP32 (Gateway):** Periodically polls GitHub using HTTP/HTTPS HEAD requests, monitors the `ETag` header for remote binary changes, streams chunks of the binary over SSL, and acts as the UART Master to flash the host.
-* **STM32F103 (Application Host):** Runs a custom Bare-Metal Bootloader that verifies connection handshakes, erases designated flash memory pages, performs 16-bit CRC checks on incoming packets, programs its own internal flash, and jumps safely between the Bootloader and Application spaces.
-
-## 2. Key Features & Implementation Achievements
-
-* **Dynamic Update Detection:** Uses HTTP `ETag` tracking instead of downloading the entire file to check for updates, minimizing bandwidth consumption.
-* **Cache-Busting Mechanism:** Implements a random `cache buster` parameter appended to URLs to bypass intermediate proxy caches and ensure fresh fetches.
-* **Bare-Metal Reliability:** The STM32 bootloader is built entirely using direct register access (No HAL, No LL), ensuring minimum footprint and deterministic execution.
-* **Memory-Safe Padding:** Automates 128-byte alignment padding (`0xFF`) for partial flash blocks at the end of binary streams.
-* **Visual Status Indicators:** On-board LEDs accurately represent system states (New Version Available, Data Transfer/Loading).
-
-## 3. Hardware Interconnection & Pinout
-
-### 3.1 Wiring Schematic
-
-
-### 3.2 ESP32 Peripherals
-
-* `GPIO 0`: Push Button (Active-Low with software debounce) to trigger manual update installation.
-* `GPIO 4`: `LED_NEW_VERSION` (Indicator for remote updates discovered).
-* `GPIO 2`: `LED_LOADING` (Indicator for active erasing/programming).
-
-### 3.3 STM32 Peripherals
-
-* `PA0`: Boot-pin Override Check (If high on reset, forces an instant jump to Application).
-
-## 4. System Architecture & Flow
-
-### 4.1 Update Detection & Download Sequence
-The following sequence describes how a firmware update is recognized, fetched, and installed:
-
-1. **Polling:** ESP32 periodically queries the GitHub URL via `http_get_etag()`.
-2. **Comparison:** If the fetched `ETag` matches `last_applied_etag`, the device remains idle. If different, `LED_NEW_VERSION` is driven high.
-3. **User Trigger:** When the button on the ESP32 is pressed, the custom UART Bootloader protocol sequence initiates.
-
-### 4.2 UART Frame Protocol Definition
-All packets transmitted from the ESP32 to the STM32 follow a rigid serialization format:
-
-| Field | Size (Bytes) | Value / Description |
-| :--- | :--- | :--- |
-| **Start of Frame (SOF)** | 2 | `0xAA 0xBB` |
-| **Command Code (CMD)** | 1 | `BL_START`, `BL_ERASE`, `BL_PROGRAM`, or `BL_JUMP` |
-| **Data Length** | 1 | Number of data payload bytes (Length <= 250) |
-| **Payload Data** | Variable | Raw binary payload content |
-| **Checksum (CRC16)** | 2 | Big-Endian CCITT CRC-16 ($x^{16} + x^{12} + x^5 + 1$) |
-
-
-## 5. Software State Machines
-```mermaid
-stateDiagram-v2
-    [*] --> BL_WAIT_KEY_1 : Power On / Reset
-    BL_WAIT_KEY_1 --> BL_WAIT_KEY_2 : Receive 0xCC (Key 1)
-    BL_WAIT_KEY_2 --> BL_WAIT_KEY_1 : Timeout / Invalid Byte (Send NACK)
-    BL_WAIT_KEY_2 --> BL_WAIT_KEY_VERIFIED : Receive 0xDD (Key 2)
-    
-    state BL_WAIT_KEY_VERIFIED {
-        [*] --> Wait_Packet
-        Wait_Packet --> Process_CMD : Receive SOF (0xAA 0xBB) & Valid CRC
-        Process_CMD --> BL_START : CMD = 0x01
-        Process_CMD --> BL_ERASE : CMD = 0x02
-        Process_CMD --> BL_PROGRAM : CMD = 0x03
-        Process_CMD --> BL_JUMP : CMD = 0x04
-    }
-    
-    BL_JUMP --> [*] : Jump to Application (Disable Interrupts)
-```
-
-### 5.1 STM32 Bootloader Security Handshake
-
-Before accepting commands, the STM32 bootloader strictly validates a two-step handshake sequence inside its main execution loop.
-
-### 5.2 Bootloader Packet Execution Flow
-Once verified, the STM32 operates based on commands embedded in the validated data frames:
-
-* **`BL_START`**: Sets internal flash write pointer (`FLASH_Page_Pointer`) to `APP_ADD_BASE`. Returns `BL_ACK`.
-* **`BL_ERASE`**: Reads the target page count from the payload and clears sector ranges sequentially. Returns `BL_ACK`.
-* **`BL_PROGRAM`**: Assembles 8-bit streams into 16-bit half-words and writes sequentially to internal Flash. Returns `BL_ACK`.
-* **`BL_JUMP`**: Disables global interrupts, clears the SysTick timer, re-maps the Vector Table Base Register (`SCB_VTOR`), resets the Main Stack Pointer (`_Set_MSP`), and triggers the Reset Handler function pointer of the user application.
+A robust dual-MCU Firmware Over-The-Air (OTA) update system. This project utilizes an ESP32 as a network-connected gateway that fetches firmware binaries from a GitHub repository via HTTPS and flashes them onto an STM32F103C8T6 target microcontroller via a custom bare-metal UART bootloader protocol.
 
 ---
 
-## 6. Flash Memory Mapping (STM32F103C8T6)
+## 1. Project Overview
 
-The internal 64KB Flash memory configuration is mapped out as follows:
+This system provides a reliable, remote firmware deployment pipeline for distributed edge devices. The architecture clearly separates the network gateway layer from the core application execution layer:
 
-```text
-┌──────────────────────────┐ 0x0800 0000
-│  STM32 Bootloader Code   │ (Allocated Bootloader Space)
-├──────────────────────────┤ 0x0800 XXXXX <-- APP_ADD_BASE
-│  Vector Table (App)      │
-├──────────────────────────┤
-│                          │
-│   User Application Space │ (Up to 25 Pages Erased via BL_ERASE)
-│                          │
-└──────────────────────────┘ 0x0801 0000 (End of 64KB Flash)
-```
-## 7. Critical Robustness & Safety Trade-offs
+* **ESP32 (Gateway):** Periodically polls GitHub using HTTPS HEAD requests, monitors the `ETag` header for remote binary changes, streams 128-byte chunk buffers over SSL, and acts as the UART Master to program the host.
+* **STM32F103 (Application Host):** Runs a custom **Bare-Metal Bootloader** (direct register access) that verifies a 2-step handshake, erases designated internal flash pages, calculates 16-bit CRC on incoming packets, programs internal flash, and safely jumps to user application space.
 
-* **Baud Rate Selection:** Clocked at `9600 bps` to guarantee noise-immune, error-free data transfer over unshielded wires without hardware flow control.
-* **Local RAM Buffering:** Uses an incremental 128-byte stream ring in RAM to eliminate the need for large, continuous external storage (SD Cards/SPI Flash).
-* **Safe Pointer Recovery:** Triggers an immediate abort upon receiving a `BL_NACK` (due to network drops or CRC mismatch) to prevent device bricking.
+---
 
-## 8. Planned Enhancements
+## 2. Key Features & Implementation Achievements
 
-* **Dual-Bank Storage:** Transitioning to a dual-bank flashing topology to support safe firmware rollbacks.
-* **Hardware Reset Wire:** Routing an ESP32 GPIO to the STM32 `NRST` line to automate cold-boot entries into the bootloader.
-* **Encrypted Binaries:** Implementing on-the-fly AES-256 decryption inside the ESP32 to prevent firmware sniffing attacks.
+* **Dynamic Update Detection:** Uses HTTP `ETag` tracking instead of full binary downloads to detect remote firmware updates, drastically reducing bandwidth and power consumption.
+* **Cache-Busting Mechanism:** Appends a random `cache buster` parameter to query URLs to bypass proxy/CDN caching and guarantee fresh fetches.
+* **Bare-Metal Reliability:** The STM32 bootloader is implemented entirely at the register level (No HAL, No LL, No RTOS), minimizing code footprint and eliminating library overhead.
+* **Stream-Based Chunk Buffering:** Downloads and flashes firmware in 128-byte chunks, avoiding the need for large external flash/RAM storage.
+* **Memory-Safe Padding:** Automates 128-byte alignment padding (`0xFF`) for non-full partial flash blocks at the end of the stream.
+* **Hardware Status Indicators:** Dedicated LEDs provide real-time visual feedback (`LED_POWER`, `LED_NEW_VERSION`, `LED_LOADING`).
 
-## 9. Author
+---
 
-* **Author:** Vo Phuc Thinh
+## 3. Hardware Overview & Pinout
+
+### 3.1 Components & Modules
+* **Gateway Microcontroller:** ESP32-DevKitC-32D.
+* **Target Microcontroller:** STM32F103C8T6 (ARM Cortex-M3).
+* **Power Management:** LM2596 Buck Converter Module (12V Battery Input → 5V System Power).
+* **Power Control:** SW_SPDT Power Switch.
+* **User Input:** SPST Push Button with RC filter (`C1 = 0.1µF`) for physical debouncing.
+
+### 3.2 Pin Mapping
+
+#### ESP32 Gateway Board:
+| Pin Name | Function / Connection | Description |
+| :--- | :--- | :--- |
+| `IO32` | `LED_POWER` (`D1` via 220Ω) | Power-On Indicator |
+| `IO17` | `LED_NEW_VERSION` (`D2` via 220Ω) | Remote update available on GitHub |
+| `IO2` | `LED_LOADING` (`D3` via 220Ω) | Active flashing/erasing in progress |
+| `IO4` | `SW1 Button` (Active-Low) | User trigger to start OTA update process |
+| `TXD2` (`IO10`) | UART2 TX $\rightarrow$ STM32 RX | Serial Command & Payload Line |
+| `RXD2` (`IO9`) | UART2 RX $\leftarrow$ STM32 TX | Serial ACK/NACK Response Line |
+
+#### Target Communication Header (5-Pin Header):
+| Pin | Function | Description |
+| :--- | :--- | :--- |
+| `1` | `VCC` | +5V Power Rail |
+| `2` | `GND` | Ground Reference |
+| `3` | `RxD` | UART Receive Line |
+| `4` | `TxD` | UART Transmit Line |
+| `5` | `Button` | Manual Boot Mode Trigger / Hardware Interlock |
+
+---
+
+## 4. Hardware Design & Schematics
+
+### 4.1 Schematic Diagram
+The custom carrier board schematic integrates power regulation, status LEDs, debounced input, and external headers.
+
+<p align="center">
+  <img src="docs/OTA_Schematic.svg" alt="ESP32 STM32 OTA System - Schematic" width="850">
+</p>
+
+### 4.2 PCB Layout
+Single-sided PCB design incorporating power planes, signal routing, and modular sub-board connections.
+
+<p align="center">
+  <img src="docs/images/OTA_PCB_Layout.svg" alt="PCB Layout" width="700" style="background-color: #0d1117; padding: 10px; border-radius: 6px;">
+</p>
+
+---
+
+## 5. Software Architecture & State Machines
+
+### 5.1 System-Level Finite State Machine (End-to-End Workflow)
+The complete interaction lifecycle between GitHub Cloud, ESP32 Gateway, and STM32 Target Microcontroller:
+
+<p align="center">
+  <img src="docs/OTA_Finite_State_Machine.drawio.svg" alt="OTA Overall System State Machine" width="900">
+</p>
+
+### 5.2 STM32 Bootloader Internal Operations
+Detailed internal state processing, packet verification, and flash memory execution on the target STM32:
+
+<p align="center">
+  <img src="docs/OTA_STM_Internal_Operations.drawio.svg" alt="STM32 Bootloader Internal Execution Flow" width="900">
+</p>
+
+---
+
+## 6. UART Communication Protocol
+
+All control frames and data packets transmitted from the ESP32 to the STM32 adhere to a structured protocol format:
+
+### 6.1 Packet Structure
+| Field | Size (Bytes) | Description / Value |
+| :--- | :--- | :--- |
+| **Start of Frame (SOF)** | 2 | Header Sync Bytes: `0xAA 0xBB` |
+| **Command Code (CMD)** | 1 | `0x01` (START), `0x02` (ERASE), `0x03` (PROGRAM), `0x04` (JUMP) |
+| **Data Length** | 1 | Payload byte length ($N \le 250$) |
+| **Payload Data** | $N$ | Binary firmware slice or command parameters |
+| **Checksum (CRC16)** | 2 | Big-Endian CCITT CRC-16 ($x^{16} + x^{12} + x^5 + 1$) |
+
+### 6.2 Security Handshake Sequence
+Before accepting flashing commands, the STM32 enforces a strict key validation handshake:
+1. ESP32 sends `BL_UPDATE_KEY_1` (`0xCC`). STM32 validates and responds with `ACK` (`0x0A`).
+2. ESP32 sends `BL_UPDATE_KEY_2` (`0xDD`). STM32 validates and responds with `ACK` (`0x0A`).
+3. Upon completion, STM32 transitions to the verified bootloader receiving state.
+
+### 6.3 Flashing Commands Breakdown
+* `BL_START` (`0x01`): Resets internal flash write pointer (`FLASH_Page_Pointer`) to `APP_ADD_BASE` (`0x08002000`).
+* `BL_ERASE` (`0x02`): Sequentially erases target application pages (Pages 8 to 63).
+* `BL_PROGRAM` (`0x03`): Programs incoming 128-byte binary streams into Flash as 16-bit half-words and increments the memory pointer.
+* `BL_JUMP` (`0x04`): Disables global interrupts, re-maps Vector Table (`SCB_VTOR` to `0x08002000`), sets Main Stack Pointer (`_Set_MSP`), and jumps to User Application Execution.
+
+---
+
+## 7. Flash Memory Mapping (STM32F103C8T6)
+
+The internal 64KB Flash memory space is divided to segregate the immutable bootloader from the upgradable application space:
+
+<p align="center">
+  <img src="docs/OTA_Flash_Memory_Layout.drawio.svg" alt="STM32 Bootloader Internal FLash Memory Mapping" width="900">
+</p>
+
+## 8. Build and Flash
+**ESP32 Gateway Firmware**
+* **Framework: ESP-IDF / Arduino Core for ESP32.**
+
+* **Libraries:** WiFiClientSecure, HTTPClient.
+
+**STM32 Bootloader**
+* **Toolchain:** arm-none-eabi-gcc.
+
+* **Build System:** CMake.
+
+* **Programmer:** ST-Link V2.
+
+* **Development Style:** Bare-metal direct register programming (No HAL / LL libraries used).
+
+## 9. Performance & System Trade-offs
+* **Baud Rate Selection (9600 bps):** Chosen to guarantee noise-immune, zero-error serial data transfer over unshielded wires between the gateway and target board without needing hardware RTS/CTS flow control.
+
+* **Stream Buffering vs. External Storage:** Processing firmware in small 128-byte RAM buffers eliminates the physical footprint, cost, and power overhead of an external SPI Flash chip or SD card module.
+
+* **Single-Bank Flashing:** Prioritizes maximum flash allocation for user applications (~56KB available out of 64KB) over dual-bank storage, relying on CRC checks and handshake verification to ensure update integrity.
+
+## 10. Limitations and Future Improvements
+* **Dual-Bank Architecture:** Adding external SPI flash to support rollback in case of power interruption during programming.
+
+* **Hardware Reset Line:** Wiring an ESP32 GPIO directly to the STM32 NRST pin for automated hard-resets into bootloader mode.
+
+* **Firmware Encryption:** Implementing AES-128/256 payload decryption on the STM32 to secure firmware against eavesdropping.
+
+## 11. Author
+**Author:** Vo Phuc Thinh
