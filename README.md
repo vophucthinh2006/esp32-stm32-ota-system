@@ -69,7 +69,7 @@ The custom carrier board schematic integrates power regulation, status LEDs, deb
 Single-sided PCB design incorporating power planes, signal routing, and modular sub-board connections.
 
 <p align="center">
-  <img src="docs/OTA_PCB_Layout.svg" alt="ESP32 STM32 OTA System - PCB Layout" width="700">
+  <img src="docs/images/OTA_PCB_Layout.svg" alt="PCB Layout" width="700" style="background-color: #0d1117; padding: 10px; border-radius: 6px;">
 </p>
 
 ---
