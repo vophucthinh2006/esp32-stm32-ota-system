@@ -127,7 +127,15 @@ The internal 64KB Flash memory space is divided to segregate the immutable bootl
   <img src="docs/OTA_Flash_Memory_Layout.drawio.svg" alt="STM32 Bootloader Internal FLash Memory Mapping" width="900">
 </p>
 
-## 8. Build and Flash
+---
+
+## 8. Demo Video
+Below is a short demo video illustrating the end-to-end OTA update process:
+▶️ [ESP32 to STM32 Dual-MCU OTA Update - Demo Video]([https://youtu.be/YOUR_VIDEO_ID](https://www.youtube.com/watch?v=XsSUUxfZz8Y))
+
+---
+
+## 9. Build and Flash
 **ESP32 Gateway Firmware**
 * **Framework: ESP-IDF / Arduino Core for ESP32.**
 
@@ -142,19 +150,25 @@ The internal 64KB Flash memory space is divided to segregate the immutable bootl
 
 * **Development Style:** Bare-metal direct register programming (No HAL / LL libraries used).
 
-## 9. Performance & System Trade-offs
+---
+
+## 10. Performance & System Trade-offs
 * **Baud Rate Selection (9600 bps):** Chosen to guarantee noise-immune, zero-error serial data transfer over unshielded wires between the gateway and target board without needing hardware RTS/CTS flow control.
 
 * **Stream Buffering vs. External Storage:** Processing firmware in small 128-byte RAM buffers eliminates the physical footprint, cost, and power overhead of an external SPI Flash chip or SD card module.
 
 * **Single-Bank Flashing:** Prioritizes maximum flash allocation for user applications (~56KB available out of 64KB) over dual-bank storage, relying on CRC checks and handshake verification to ensure update integrity.
 
-## 10. Limitations and Future Improvements
+---
+
+## 11. Limitations and Future Improvements
 * **Dual-Bank Architecture:** Adding external SPI flash to support rollback in case of power interruption during programming.
 
 * **Hardware Reset Line:** Wiring an ESP32 GPIO directly to the STM32 NRST pin for automated hard-resets into bootloader mode.
 
 * **Firmware Encryption:** Implementing AES-128/256 payload decryption on the STM32 to secure firmware against eavesdropping.
 
-## 11. Author
+---
+
+## 12. Author
 **Author:** Vo Phuc Thinh
